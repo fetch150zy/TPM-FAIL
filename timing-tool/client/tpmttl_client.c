@@ -54,7 +54,7 @@ int main(int argc, char * argv[])
         return -1;
       }
       for(int i = 0; i < param.cnt; i++){
-          printf("%lu,", param.ttls[i]);
+          printf("%llu,", param.ttls[i]);
       }
       printf("\n");      
       break;   

@@ -1,5 +1,3 @@
-# TPM-FAIL
-
 ## High-Resolution TPM Time Sampling
 
 In Threat Model I, a System-Level Adversary may install a kernel module to facilitate collection of high resolution timing measurements. Higher resolution (lower noise) samples allows us to recover the signing key much faster with fewer samples. We share our Linux kernel module here.
