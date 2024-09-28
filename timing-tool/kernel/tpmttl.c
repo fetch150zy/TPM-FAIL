@@ -100,32 +100,30 @@ static void enable_attack_stub()
 
 static void disable_attack_stub()
 {  
-  unsigned long flags;
-  local_irq_save(flags);
-  write_cr0 (read_cr0 () & (~ 0x10000));
+  write_cr0(read_cr0() & (~X86_CR0_WP));
+
   memcpy((void*)ptpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
-  write_cr0 (read_cr0 () | 0x10000);
-  local_irq_restore(flags);
+
+  write_cr0(read_cr0() | X86_CR0_WP); 
 
   printk("TPMTTL: DISABLED\n");
 }
 
 
-static long ioctl_uninstall_timer(struct file *filep,
-  unsigned int cmd, unsigned long arg){
+static long ioctl_uninstall_timer(struct file *filep, unsigned int cmd, unsigned long arg)
+{
   disable_attack_stub();
   return 0;
 }
 
-static long ioctl_install_timer(struct file *filep,
-  unsigned int cmd, unsigned long arg){
+static long ioctl_install_timer(struct file *filep, unsigned int cmd, unsigned long arg)
+{
   enable_attack_stub();
   return 0;
 }
 
-static long ioctl_read(struct file *filep,
-  unsigned int cmd, unsigned long arg){
-  
+static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg)
+{
   struct tpmttl_generic_param * param;
   param = (struct tpmttl_generic_param *) arg;
   memcpy(param->ttls, tscrequest, 1000 * sizeof(unsigned long long));
@@ -137,11 +135,8 @@ static long ioctl_read(struct file *filep,
   return 0;
 }
 
-typedef long (*tpmttl_ioctl_t)(struct file *filep,
-	unsigned int cmd, unsigned long arg);
-
-long tpmttl_ioctl(struct file *filep, unsigned int cmd, 
-	unsigned long arg)
+typedef long (*tpmttl_ioctl_t)(struct file *filep, unsigned int cmd, unsigned long arg);
+long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
   struct tpmttl_generic_param data;
   long ret;
@@ -175,17 +170,6 @@ long tpmttl_ioctl(struct file *filep, unsigned int cmd,
 }
 
 
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
-
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
-
 #ifdef CONFIG_PREEMPT_RT
 static inline void tpm_tis_flush(void __iomem *iobase)
 {
@@ -206,6 +190,7 @@ static inline void tpm_tis_iowrite32(u32 b, void __iomem *iobase, u32 addr)
 	iowrite32(b, iobase + addr);
 	tpm_tis_flush(iobase);
 }
+
 
 static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode)
 {
@@ -255,10 +240,23 @@ static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *da
   return 0;
 }
 
+
 static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode)
 {
   return internal_tpm_tcg_write_bytes_handler(data, addr, len, value, io_mode);
 }
+
+
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
+};
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
 
 
 static int tpmttl_init(void)
