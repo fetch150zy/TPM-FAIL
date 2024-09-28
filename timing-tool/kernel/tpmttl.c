@@ -199,6 +199,7 @@ static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *da
 
   switch (io_mode) {
   case TPM_TIS_PHYS_8:
+    printk(KERN_ALERT "TPMTTL: TPM_TIS_PHYS_8\n");
     if (len == 1 && *value == TPM_STS_GO && TPM_STS(data->locality) == addr) {
       wmb();
       t = rdtsc();
@@ -217,9 +218,11 @@ static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *da
     break;
 
   case TPM_TIS_PHYS_16:
+    printk(KERN_ALERT "TPMTTL: TPM_TIS_PHYS_16\n");
     return -EINVAL;
 
   case TPM_TIS_PHYS_32:
+    printk(KERN_ALERT "TPMTTL: TPM_TIS_PHYS_32\n");
     if (len == 4 && TPM_STS(data->locality) == addr) {
       wmb();
       t = rdtsc();
