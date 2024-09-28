@@ -185,59 +185,26 @@ static inline void tpm_tis_iowrite8(u8 b, void __iomem *iobase, u32 addr)
 	tpm_tis_flush(iobase);
 }
 
-static inline void tpm_tis_iowrite32(u32 b, void __iomem *iobase, u32 addr)
-{
-	iowrite32(b, iobase + addr);
-	tpm_tis_flush(iobase);
-}
-
 
 static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode)
 {
   unsigned long t;
   struct tpm_tis_tcg_phy *phy = container_of(data, struct tpm_tis_tcg_phy, priv);
 
-  switch (io_mode) {
-  case TPM_TIS_PHYS_8:
-    printk(KERN_ALERT "TPMTTL: TPM_TIS_PHYS_8\n");
-    if (len == 1 && *value == TPM_STS_GO && TPM_STS(data->locality) == addr) {
-      wmb();
-      t = rdtsc();
-      rmb();
-      tpm_tis_iowrite8(*value, phy->iobase, addr);
+  if (len == 1 && *value == TPM_STS_GO && TPM_STS(data->locality) == addr) {
+    wmb();
+    t = rdtsc();
+    rmb();
+    tpm_tis_iowrite8(*value, phy->iobase, addr);
 
-      while (!(ioread8(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
+    while (!(ioread8(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
 
-      rmb();
+    rmb();
 
-      tscrequest[requestcnt++] = rdtsc() - t;
-    } else {
-      while (len--)
-        tpm_tis_iowrite8(*value++, phy->iobase, addr);
-    }
-    break;
-
-  case TPM_TIS_PHYS_16:
-    printk(KERN_ALERT "TPMTTL: TPM_TIS_PHYS_16\n");
-    return -EINVAL;
-
-  case TPM_TIS_PHYS_32:
-    printk(KERN_ALERT "TPMTTL: TPM_TIS_PHYS_32\n");
-    if (len == 4 && TPM_STS(data->locality) == addr) {
-      wmb();
-      t = rdtsc();
-      rmb();
-      tpm_tis_iowrite32(le32_to_cpu(*((__le32 *)value)), phy->iobase, addr);
-
-      while (!(ioread32(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
-
-      rmb();
-
-      tscrequest[requestcnt++] = rdtsc() - t;
-    } else {
-      tpm_tis_iowrite32(le32_to_cpu(*((__le32 *)value)), phy->iobase, addr);
-    }
-    break;
+    tscrequest[requestcnt++] = rdtsc() - t;
+  } else {
+    while (len--)
+      tpm_tis_iowrite8(*value++, phy->iobase, addr);
   }
 
   return 0;
