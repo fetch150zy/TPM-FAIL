@@ -215,7 +215,7 @@ static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *da
       rmb();
       tpm_tis_iowrite8(*value, phy->iobase, addr);
 
-      while (!(tpm_tis_ioread8(phy->iobase, addr) & TPM_STS_DATA_AVAIL));
+      while (!(ioread8(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
 
       rmb();
 
@@ -236,7 +236,7 @@ static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *da
       rmb();
       tpm_tis_iowrite32(le32_to_cpu(*((__le32 *)value)), phy->iobase, addr);
 
-      while (!(tpm_tis_ioread32(phy->iobase, addr) & TPM_STS_DATA_AVAIL));
+      while (!(ioread32(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
 
       rmb();
 
