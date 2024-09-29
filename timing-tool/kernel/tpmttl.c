@@ -1,6 +1,10 @@
 #include <linux/module.h>
 #include <linux/miscdevice.h>
 #include <linux/uaccess.h>
+#include <linux/acpi.h>
+#include <linux/highmem.h>
+#include <linux/rculist.h>
+#include <linux/pm_runtime.h>
 #include <linux/io.h>
 #include <linux/fs.h>
 #include <linux/tpm.h>
