@@ -168,28 +168,11 @@ static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, si
 		return -E2BIG;
 	}
 
-  if (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_PLUTON)
-		__crb_cmd_ready(&chip->dev, priv);
-
   memcpy_toio(priv->cmd, buf, len);
 
   wmb();
   t = rdtsc();
   rmb();
-  
-  if ((priv->sm == ACPI_TPM2_COMMAND_BUFFER) ||
-      (priv->sm == ACPI_TPM2_MEMORY_MAPPED) ||
-      (!strcmp(priv->hid, "MSFT0101")))
-    iowrite32(CRB_START_INVOKE, &priv->regs_t->ctrl_start);
-  
-  if ((priv->sm == ACPI_TPM2_START_METHOD) ||
-	    (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_START_METHOD))
-		rc = crb_do_acpi_start(chip);
-
-  if (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_ARM_SMC) {
-		iowrite32(CRB_START_INVOKE, &priv->regs_t->ctrl_start);
-		rc = tpm_crb_smc_start(&chip->dev, priv->smc_func_id);
-	}
 
   while((ioread32(&priv->regs_t->ctrl_start) & CRB_START_INVOKE) ==
 	    CRB_START_INVOKE);
