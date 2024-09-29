@@ -54,13 +54,6 @@ struct fake_crb_priv {
 
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
-enum tpm_chip_flags {
-  TPM_CHIP_FLAG_REGISTERED	= BIT(0),
-  TPM_CHIP_FLAG_TPM2		= BIT(1),
-  TPM_CHIP_FLAG_IRQ		= BIT(2),
-  TPM_CHIP_FLAG_VIRTUAL		= BIT(3),
-};
-
 
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
 static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
