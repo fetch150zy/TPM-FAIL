@@ -1,0 +1,92 @@
+static int crb_send(struct tpm_chip *chip, u8 *buf, size_t len)
+{
+	struct crb_priv *priv = dev_get_drvdata(&chip->dev);
+	int rc = 0;
+
+	/* Zero the cancel register so that the next command will not get
+	 * canceled.
+	 */
+	iowrite32(0, &priv->regs_t->ctrl_cancel);
+
+	if (len > priv->cmd_size) {
+		dev_err(&chip->dev, "invalid command count value %zd %d\n",
+			len, priv->cmd_size);
+		return -E2BIG;
+	}
+
+	memcpy_toio(priv->cmd, buf, len);
+
+	/* Make sure that cmd is populated before issuing start. */
+	wmb();
+
+	/* The reason for the extra quirk is that the PTT in 4th Gen Core CPUs
+	 * report only ACPI start but in practice seems to require both
+	 * CRB start, hence invoking CRB start method if hid == MSFT0101.
+	 */
+	if ((priv->sm == ACPI_TPM2_COMMAND_BUFFER) ||
+	    (priv->sm == ACPI_TPM2_MEMORY_MAPPED) ||
+	    (!strcmp(priv->hid, "MSFT0101")))
+		iowrite32(CRB_START_INVOKE, &priv->regs_t->ctrl_start);
+
+	if ((priv->sm == ACPI_TPM2_START_METHOD) ||
+	    (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_START_METHOD))
+		rc = crb_do_acpi_start(chip);
+
+	if (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_ARM_SMC) {
+		iowrite32(CRB_START_INVOKE, &priv->regs_t->ctrl_start);
+		rc = tpm_crb_smc_start(&chip->dev, priv->smc_func_id);
+	}
+
+	return rc;
+}
+
+struct tpm_chip {
+	struct device dev;
+	struct device devs;
+	struct cdev cdev;
+	struct cdev cdevs;
+
+	/* A driver callback under ops cannot be run unless ops_sem is held
+	 * (sometimes implicitly, eg for the sysfs code). ops becomes null
+	 * when the driver is unregistered, see tpm_try_get_ops.
+	 */
+	struct rw_semaphore ops_sem;
+	const struct tpm_class_ops *ops;
+
+	struct tpm_bios_log log;
+	struct tpm_chip_seqops bin_log_seqops;
+	struct tpm_chip_seqops ascii_log_seqops;
+
+	unsigned int flags;
+
+	int dev_num;		/* /dev/tpm# */
+	unsigned long is_open;	/* only one allowed */
+
+	struct mutex tpm_mutex;	/* tpm is processing */
+
+	unsigned long timeout_a; /* jiffies */
+	unsigned long timeout_b; /* jiffies */
+	unsigned long timeout_c; /* jiffies */
+	unsigned long timeout_d; /* jiffies */
+	bool timeout_adjusted;
+	unsigned long duration[3]; /* jiffies */
+	bool duration_adjusted;
+
+	struct dentry *bios_dir[TPM_NUM_EVENT_LOG_FILES];
+
+	const struct attribute_group *groups[3];
+	unsigned int groups_cnt;
+
+	u16 active_banks[7];
+#ifdef CONFIG_ACPI
+	acpi_handle acpi_dev_handle;
+	char ppi_version[TPM_PPI_VERSION_LEN + 1];
+#endif /* CONFIG_ACPI */
+
+	struct tpm_space work_space;
+	u32 nr_commands;
+	u32 *cc_attrs_tbl;
+
+	/* active locality */
+	int locality;
+};
