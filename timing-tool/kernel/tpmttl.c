@@ -3,9 +3,10 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/fs.h>
+#include <linux/tpm.h>
 #include "tpmttl.h"
 
-unsigned long long pcrb_send = 0xffffffff81643d20;
+unsigned long long pcrb_send = 0xffffffff81b2fb00;
 
 unsigned char  nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
 unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
