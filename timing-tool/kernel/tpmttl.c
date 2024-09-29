@@ -39,7 +39,7 @@ struct crb_regs_tail {
 	u64 ctrl_rsp_pa;
 } __packed;
 
-struct fake_crb_priv {
+struct crb_priv {
 	u32 sm;
 	const char *hid;
 	struct crb_regs_head __iomem *regs_h;
@@ -150,35 +150,93 @@ long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 }
 
 
+static bool crb_wait_for_reg_32(u32 __iomem *reg, u32 mask, u32 value,
+				unsigned long timeout)
+{
+	ktime_t start;
+	ktime_t stop;
+
+	start = ktime_get();
+	stop = ktime_add(start, ms_to_ktime(timeout));
+
+	do {
+		if ((ioread32(reg) & mask) == value)
+			return true;
+
+		usleep_range(50, 100);
+	} while (ktime_before(ktime_get(), stop));
+
+	return ((ioread32(reg) & mask) == value);
+}
+
+
+static int crb_try_pluton_doorbell(struct crb_priv *priv, bool wait_for_complete)
+{
+	if (priv->sm != ACPI_TPM2_COMMAND_BUFFER_WITH_PLUTON)
+		return 0;
+
+	if (!crb_wait_for_reg_32(priv->pluton_reply_addr, ~0, 1, TPM2_TIMEOUT_C))
+		return -ETIME;
+
+	iowrite32(1, priv->pluton_start_addr);
+	if (wait_for_complete == false)
+		return 0;
+
+	if (!crb_wait_for_reg_32(priv->pluton_start_addr,
+				 0xffffffff, 0, 200))
+		return -ETIME;
+
+	return 0;
+}
+
+
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   unsigned long t;
   int rc = 0;
-  // asm volatile("mov %%rdi, %%r8;": : : "%r8");
-  // asm volatile("mov %%rsi, %%r9;": : : "%r9");
+  struct crb_priv *priv = dev_get_drvdata(&chip->dev);
 
-  struct fake_crb_priv *g_priv = dev_get_drvdata(&chip->dev);;
-  
-  iowrite32(0, &g_priv->regs_t->ctrl_cancel);
+  iowrite32(0, &priv->regs_t->ctrl_cancel);
 
-  memcpy_toio(g_priv->cmd, buf, len);
+  if (len > priv->cmd_size) {
+		dev_err(&chip->dev, "invalid command count value %zd %d\n",
+			len, priv->cmd_size);
+		return -E2BIG;
+	}
+
+  if (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_PLUTON)
+		__crb_cmd_ready(&chip->dev, priv);
+
+  memcpy_toio(priv->cmd, buf, len);
 
   wmb();
   t = rdtsc();
   rmb();
   
-  iowrite32(CRB_START_INVOKE, &g_priv->regs_t->ctrl_start);
+  if ((priv->sm == ACPI_TPM2_COMMAND_BUFFER) ||
+      (priv->sm == ACPI_TPM2_MEMORY_MAPPED) ||
+      (!strcmp(priv->hid, "MSFT0101")))
+    iowrite32(CRB_START_INVOKE, &priv->regs_t->ctrl_start);
   
-  while((ioread32(&g_priv->regs_t->ctrl_start) & CRB_START_INVOKE) ==
+  if ((priv->sm == ACPI_TPM2_START_METHOD) ||
+	    (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_START_METHOD))
+		rc = crb_do_acpi_start(chip);
+
+  if (priv->sm == ACPI_TPM2_COMMAND_BUFFER_WITH_ARM_SMC) {
+		iowrite32(CRB_START_INVOKE, &priv->regs_t->ctrl_start);
+		rc = tpm_crb_smc_start(&chip->dev, priv->smc_func_id);
+	}
+
+  while((ioread32(&priv->regs_t->ctrl_start) & CRB_START_INVOKE) ==
 	    CRB_START_INVOKE);
   rmb();
 
   tscrequest[requestcnt++] = rdtsc() - t;
   
-  // asm volatile("mov %%r8, %%rdi;": : : "%r8");
-  // asm volatile("mov %%r9, %%rsi;": : : "%r9");
+  if (rc)
+    return rc;
 
-  return 0;
+  return crb_try_pluton_doorbell(priv, false);
 }
 
 
