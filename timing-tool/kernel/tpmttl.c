@@ -174,6 +174,8 @@ static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, si
   t = rdtsc();
   rmb();
 
+  iowrite32(CRB_START_INVOKE, &g_priv->regs_t->ctrl_start);
+
   while((ioread32(&priv->regs_t->ctrl_start) & CRB_START_INVOKE) ==
 	    CRB_START_INVOKE);
   rmb();
