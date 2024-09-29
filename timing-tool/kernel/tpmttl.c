@@ -8,41 +8,11 @@
 
 unsigned long long pcrb_send = 0xffffffff81b2fb00;
 
-unsigned char  nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
-unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
-unsigned char  jmp_stub[] = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
-
-enum crb_defaults {
-	CRB_ACPI_START_REVISION_ID = 1,
-	CRB_ACPI_START_INDEX = 1,
-};
-
-enum crb_loc_ctrl {
-	CRB_LOC_CTRL_REQUEST_ACCESS	= BIT(0),
-	CRB_LOC_CTRL_RELINQUISH		= BIT(1),
-};
-
-enum crb_loc_state {
-	CRB_LOC_STATE_LOC_ASSIGNED	= BIT(1),
-	CRB_LOC_STATE_TPM_REG_VALID_STS	= BIT(7),
-};
-
-enum crb_ctrl_req {
-	CRB_CTRL_REQ_CMD_READY	= BIT(0),
-	CRB_CTRL_REQ_GO_IDLE	= BIT(1),
-};
-
-enum crb_ctrl_sts {
-	CRB_CTRL_STS_ERROR	= BIT(0),
-	CRB_CTRL_STS_TPM_IDLE	= BIT(1),
-};
+unsigned char nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
+unsigned char jmp_stub[] = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
 
 enum crb_start {
 	CRB_START_INVOKE	= BIT(0),
-};
-
-enum crb_cancel {
-	CRB_CANCEL_INVOKE	= BIT(0),
 };
 
 struct crb_regs_head {
@@ -92,8 +62,8 @@ enum tpm_chip_flags {
 };
 
 
-static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t len);
-static int crb_send_handler(uint64_t *chip, u8 *buf, size_t len);
+static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
+static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
 
 unsigned long long tscrequest[1000] = {0};
 unsigned long long requestcnt = 0;
