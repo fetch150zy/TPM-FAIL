@@ -154,46 +154,6 @@ long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 }
 
 
-static bool crb_wait_for_reg_32(u32 __iomem *reg, u32 mask, u32 value,
-				unsigned long timeout)
-{
-	ktime_t start;
-	ktime_t stop;
-
-	start = ktime_get();
-	stop = ktime_add(start, ms_to_ktime(timeout));
-
-	do {
-		if ((ioread32(reg) & mask) == value)
-			return true;
-
-		usleep_range(50, 100);
-	} while (ktime_before(ktime_get(), stop));
-
-	return ((ioread32(reg) & mask) == value);
-}
-
-
-static int crb_try_pluton_doorbell(struct crb_priv *priv, bool wait_for_complete)
-{
-	if (priv->sm != ACPI_TPM2_COMMAND_BUFFER_WITH_PLUTON)
-		return 0;
-
-	if (!crb_wait_for_reg_32(priv->pluton_reply_addr, ~0, 1, TPM2_TIMEOUT_C))
-		return -ETIME;
-
-	iowrite32(1, priv->pluton_start_addr);
-	if (wait_for_complete == false)
-		return 0;
-
-	if (!crb_wait_for_reg_32(priv->pluton_start_addr,
-				 0xffffffff, 0, 200))
-		return -ETIME;
-
-	return 0;
-}
-
-
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   unsigned long t;
@@ -237,10 +197,7 @@ static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, si
 
   tscrequest[requestcnt++] = rdtsc() - t;
   
-  if (rc)
-    return rc;
-
-  return crb_try_pluton_doorbell(priv, false);
+  return rc;
 }
 
 
