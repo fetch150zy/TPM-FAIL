@@ -10,8 +10,8 @@
 
 unsigned long long pcrb_send = 0xffffffff81b2fb00;
 
-unsigned char nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
-unsigned char jmp_stub[] = {0xe9, 0xf1, 0xf2, 0xf3, 0xf4};
+unsigned char nop_stub[] = {0x13, 0x00, 0x00, 0x00, 0x00};
+unsigned char jmp_stub[] = {0x6f, 0x00, 0x00, 0x00, 0x00};
 
 enum crb_start {
 	CRB_START_INVOKE	= BIT(0),
@@ -55,17 +55,6 @@ struct crb_priv {
 };
 
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
-
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
-
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
 
 
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
@@ -205,6 +194,18 @@ static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   return internal_crb_send_handler(chip, buf, len);
 }
+
+
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
+};
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
 
 
 static int tpmttl_init(void)

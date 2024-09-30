@@ -56,17 +56,6 @@ struct crb_priv {
 
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
-
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
-
 
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
 static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
@@ -205,6 +194,18 @@ static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   return internal_crb_send_handler(chip, buf, len);
 }
+
+
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
+};
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
 
 
 static int tpmttl_init(void)

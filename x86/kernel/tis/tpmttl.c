@@ -67,17 +67,6 @@ struct tpm_tis_tcg_phy {
 
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
-static const struct file_operations tpmttl_fops = {
-  .owner = THIS_MODULE,
-  .unlocked_ioctl = tpmttl_ioctl,
-};
-
-static struct miscdevice tpmttl_miscdev = {
-  .minor = MISC_DYNAMIC_MINOR,
-  .name = "tpmttl",
-  .fops = &tpmttl_fops,
-};
-
 #ifdef CONFIG_PREEMPT_RT
 static inline void tpm_tis_flush(void __iomem *iobase)
 {
@@ -225,6 +214,18 @@ static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 
 {
   return internal_tpm_tcg_write_bytes_handler(data, addr, len, value, io_mode);
 }
+
+
+static const struct file_operations tpmttl_fops = {
+  .owner = THIS_MODULE,
+  .unlocked_ioctl = tpmttl_ioctl,
+};
+
+static struct miscdevice tpmttl_miscdev = {
+  .minor = MISC_DYNAMIC_MINOR,
+  .name = "tpmttl",
+  .fops = &tpmttl_fops,
+};
 
 
 static int tpmttl_init(void)
