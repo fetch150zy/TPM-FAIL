@@ -1,5 +1,4 @@
-obj-m += tpmttlcrb.o
-obj-m += tpmttltis.o
+obj-m += tpmttl.o
 
 KBUILD_CFLAGS += -w -msse4 -mpreferred-stack-boundary=4 -O2
 
