@@ -5,7 +5,7 @@
 #include <linux/fs.h>
 #include <linux/tpm.h>
 
-#include "../tpmttl.h"
+#include "tpmttl.h"
 
 
 unsigned long long pcrb_send = 0xffffffff81b2fb00;
