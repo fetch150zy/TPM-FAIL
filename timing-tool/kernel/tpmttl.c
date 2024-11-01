@@ -7,8 +7,8 @@
 #include "tpmttl.h"
 
 
-unsigned long long pcrb_send     = 0xffffffff81641a20;
-unsigned long long ptpm_tcg_write_bytes = 0xffffffff81640b60;
+unsigned long long pcrb_send            = 0xffffffff81643d20;
+unsigned long long ptpm_tcg_write_bytes = 0xffffffff81642b40;
 
 unsigned char nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
 unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
