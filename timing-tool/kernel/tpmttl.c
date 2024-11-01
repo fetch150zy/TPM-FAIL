@@ -2,13 +2,13 @@
 #include <linux/miscdevice.h>
 #include <linux/uaccess.h>
 #include <linux/io.h>
+#include <linux/tpm.h>
+
 #include "tpmttl.h"
 
 
 unsigned long long pcrb_send     = 0xffffffff81641a20;
 unsigned long long ptpm_tcg_write_bytes = 0xffffffff81640b60;
-
-
 
 unsigned char nop_stub[] = {0x90, 0x90, 0x90, 0x90, 0x90};
 unsigned char call_stub[] = {0xe8, 0xf1, 0xf2, 0xf3, 0xf4};
@@ -86,15 +86,12 @@ struct tpm_tis_tcg_phy {
   void __iomem *iobase;
 };
 
-
-
 enum crb_start {
   CRB_START_INVOKE = BIT(0),
 };
 
-
-static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t len);
-static int crb_send_handler(uint64_t * chip, u8 *buf, size_t len);
+static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
+static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len);
 
 static noinline int internal_tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, u8 *value);
 static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 len, u8 *value);
@@ -259,11 +256,12 @@ static int tpm_tcg_write_bytes_handler(struct tpm_tis_data *data, u32 addr, u16 
   return internal_tpm_tcg_write_bytes_handler(data, addr, len, value);
 }
 
-static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t len){
+static noinline int internal_crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
+{
   unsigned long t;
   int rc = 0;
-  asm volatile("mov %%rdi, %%r8;": : : "%r8");
-  asm volatile("mov %%rsi, %%r9;": : : "%r9");
+  // asm volatile("mov %%rdi, %%r8;": : : "%r8");
+  // asm volatile("mov %%rsi, %%r9;": : : "%r9");
 
   g_chip = chip;
   g_priv = g_chip->priv;
@@ -284,13 +282,13 @@ static noinline int internal_crb_send_handler(uint64_t * chip, u8 *buf, size_t l
 
   tscrequest[requestcnt++] = rdtsc() - t;
   
-  asm volatile("mov %%r8, %%rdi;": : : "%r8");
-  asm volatile("mov %%r9, %%rsi;": : : "%r9");
+  // asm volatile("mov %%r8, %%rdi;": : : "%r8");
+  // asm volatile("mov %%r9, %%rsi;": : : "%r9");
 
   return rc;
 }
 
-static int crb_send_handler(uint64_t * chip, u8 *buf, size_t len)
+static int crb_send_handler(struct tpm_chip *chip, u8 *buf, size_t len)
 {
   return internal_crb_send_handler(chip, buf, len);
 } 
